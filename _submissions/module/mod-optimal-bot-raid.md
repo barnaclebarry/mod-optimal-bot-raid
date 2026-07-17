@@ -1,8 +1,8 @@
 ---
 name: "mod-optimal-bot-raid"
-author: "YourName/YourOrganization"
-public_repo_uri: "https://github.com/YourOrganization/mod-optimal-bot-raid"
-source_archive_uri: "https://github.com/YourOrganization/mod-optimal-bot-raid/archive/refs/heads/main.zip"
+author: "barnaclebarry"
+public_repo_uri: "https://github.com/barnaclebarry/mod-optimal-bot-raid"
+source_archive_uri: "https://github.com/barnaclebarry/mod-optimal-bot-raid/archive/refs/heads/main.zip"
 license: "AGPL v3.0"
 
 # Module Configuration
