@@ -20,7 +20,7 @@ Compilation will safely bypass and disable the module on a vanilla AzerothCore d
 ## ✨ Features
 
 * **Instant Autonomous Assembly:** Drafts, invites, teleports, and syncs AI state machines for parties and raids of 5, 10, 15, 20, 25, or 40 players in a single command.
-* **Flawless WotLK Buff Synergy:** Uses lightning-fast bitwise matrix math to guarantee your raid is drafted with 10% Stats, Replenishment, Bloodlust, 13% Magic Damage, etc., with zero buff redundancy. Special mathematical weights are natively given to heavily sought-after WotLK buffs.
+* **WotLK Buff Synergy:** Uses lightning-fast bitwise matrix math to guarantee your raid is drafted with 10% Stats, Replenishment, Bloodlust, 13% Magic Damage, etc., with zero buff redundancy. Special mathematical weights are natively given to heavily sought-after WotLK buffs.
 * **AI Competency Multipliers:** The algorithm heavily favors bot specs that perform flawlessly (e.g., Holy Paladins at `1.5x`, Combat Rogues at `1.5x`) while mathematically penalizing specs that bots struggle with (e.g., Unholy DKs dropping to `0.6x`, Feral Druids to `0.5x`).
 * **Progression Agnostic (Lvl 1 - 80):** Scales dynamically based on the Raid Leader's level. If you form a 40-man raid at Level 60, it adjusts the quotas for Vanilla (e.g., 10 healers instead of 8) and strictly locks the draft to <= Lvl 60 bots to prevent Outland-geared bots from contaminating your Vanilla progression.
 * **Crash-Proof Concurrency & Thread Safety:** Polling a server's entire player array can cause severe memory access violations. This module natively utilizes `HashMapHolder<Player>::GetLock()` with a `std::shared_lock<std::shared_mutex>` to ensure thread-safe asynchronous entity scraping and evaluation.
