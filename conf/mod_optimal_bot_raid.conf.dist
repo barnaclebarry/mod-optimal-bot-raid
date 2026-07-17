@@ -1,0 +1,138 @@
+[worldserver]
+#
+# Optimal Bot Raid Configuration
+#
+# ==============================================================================
+# ALGORITHM HEURISTIC WEIGHTS
+# ==============================================================================
+# The bot drafting algorithm calculates a "Final Score" for every bot based on 
+# their normalized GearScore (scaled against the highest geared bot in the pool) 
+# and their Synergy Score (what unique WotLK buffs they bring to the group).
+# 
+# OptimalBotRaid.Algo.Weight.GS
+#    Description: The mathematical weight applied to the bot's normalized gear score.
+#    Range:       0.0 to 10.0
+#    Default:     0.5
+OptimalBotRaid.Algo.Weight.GS = 0.5
+
+# OptimalBotRaid.Algo.Weight.Buff
+#    Description: The mathematical weight applied to the bot's buff synergy score.
+#    Range:       0.0 to 10.0
+#    Default:     0.5
+OptimalBotRaid.Algo.Weight.Buff = 0.5
+
+# ==============================================================================
+# SYNERGY BUFF SCORING
+# ==============================================================================
+# Evaluates WotLK buff overlap via a bitwise matrix. If a bot brings a WotLK 
+# buff the raid DOES NOT currently have, they are awarded these points.
+#
+# Range for all Bonus Values: 0.0 to 10.0
+#
+# OptimalBotRaid.Algo.Bonus.UniqueBuff    (Base addition per unique WotLK buff. Default: 0.2)
+# OptimalBotRaid.Algo.Bonus.Bloodlust     (Overriding massive bonus for BL/Heroism. Default: 0.4)
+# OptimalBotRaid.Algo.Bonus.Replenishment (Overriding bonus for mana regeneration. Default: 0.2)
+OptimalBotRaid.Algo.Bonus.UniqueBuff = 0.2
+OptimalBotRaid.Algo.Bonus.Bloodlust = 0.4
+OptimalBotRaid.Algo.Bonus.Replenishment = 0.2
+
+# ==============================================================================
+# TARGET ROLE QUOTAS BY RAID SIZE
+# ==============================================================================
+# The algorithm strictly enforces these quotas to ensure boss survivability, 
+# deliberately prioritizing ranged DPS over melee to prevent cleave-mechanic wipes.
+# Ranged DPS slots are automatically computed from the remaining raid capacity.
+# If configured improperly (e.g. 10 tanks in a 5 man), the module mathematically clamps them.
+# Range for all values: 0 to [Raid Size]
+
+# 5-Man Dungeons
+OptimalBotRaid.Quota.5.Tanks = 1
+OptimalBotRaid.Quota.5.Healers = 1
+OptimalBotRaid.Quota.5.MeleeMax = 1
+
+# 10-Man Raids
+OptimalBotRaid.Quota.10.Tanks = 2
+OptimalBotRaid.Quota.10.Healers = 2
+OptimalBotRaid.Quota.10.MeleeMax = 2
+
+# 15-Man Scenarios/BGs
+OptimalBotRaid.Quota.15.Tanks = 2
+OptimalBotRaid.Quota.15.Healers = 3
+OptimalBotRaid.Quota.15.MeleeMax = 3
+
+# 20-Man Raids
+OptimalBotRaid.Quota.20.Tanks = 2
+OptimalBotRaid.Quota.20.Healers = 4
+OptimalBotRaid.Quota.20.MeleeMax = 5
+
+# 25-Man Raids
+OptimalBotRaid.Quota.25.Tanks = 2
+OptimalBotRaid.Quota.25.Healers = 5
+OptimalBotRaid.Quota.25.MeleeMax = 6
+
+# 40-Man Vanilla Raids (Average Raid Level <= 60)
+OptimalBotRaid.Quota.40Vanilla.Tanks = 4
+OptimalBotRaid.Quota.40Vanilla.Healers = 10
+OptimalBotRaid.Quota.40Vanilla.MeleeMax = 10
+
+# 40-Man WotLK Raids (Average Raid Level > 60)
+OptimalBotRaid.Quota.40WotLK.Tanks = 3
+OptimalBotRaid.Quota.40WotLK.Healers = 8
+OptimalBotRaid.Quota.40WotLK.MeleeMax = 10
+
+# ==============================================================================
+# AI COMPETENCY MULTIPLIERS BY CLASS & SPEC
+# ==============================================================================
+# Static multipliers applied to the bot's GearScore to account for the actual
+# capability of the Playerbot AI for a given WotLK spec tree (Left=0, Mid=1, Right=2). 
+# Range for all values: 0.1 to 10.0
+
+# Death Knight (0:Blood, 1:Frost, 2:Unholy)
+OptimalBotRaid.AI.DK.0 = 1.2
+OptimalBotRaid.AI.DK.1 = 1.5
+OptimalBotRaid.AI.DK.2 = 0.6
+
+# Paladin (0:Holy, 1:Protection, 2:Retribution)
+OptimalBotRaid.AI.Paladin.0 = 1.5
+OptimalBotRaid.AI.Paladin.1 = 1.5
+OptimalBotRaid.AI.Paladin.2 = 1.0
+
+# Mage (0:Arcane, 1:Fire, 2:Frost)
+OptimalBotRaid.AI.Mage.0 = 1.5
+OptimalBotRaid.AI.Mage.1 = 1.1
+OptimalBotRaid.AI.Mage.2 = 1.1
+
+# Shaman (0:Ele, 1:Enh, 2:Resto)
+OptimalBotRaid.AI.Shaman.0 = 1.2
+OptimalBotRaid.AI.Shaman.1 = 1.0
+OptimalBotRaid.AI.Shaman.2 = 1.5
+
+# Warlock (0:Affliction, 1:Demonology, 2:Destruction)
+OptimalBotRaid.AI.Warlock.0 = 1.0
+OptimalBotRaid.AI.Warlock.1 = 1.0
+OptimalBotRaid.AI.Warlock.2 = 1.5
+
+# Druid (0:Balance, 1:Feral, 2:Resto)
+OptimalBotRaid.AI.Druid.0 = 1.0
+OptimalBotRaid.AI.Druid.1 = 0.5
+OptimalBotRaid.AI.Druid.2 = 1.0
+
+# Priest (0:Discipline, 1:Holy, 2:Shadow)
+OptimalBotRaid.AI.Priest.0 = 0.6
+OptimalBotRaid.AI.Priest.1 = 1.0
+OptimalBotRaid.AI.Priest.2 = 1.2
+
+# Hunter (0:BM, 1:MM, 2:Survival)
+OptimalBotRaid.AI.Hunter.0 = 1.1
+OptimalBotRaid.AI.Hunter.1 = 1.2
+OptimalBotRaid.AI.Hunter.2 = 1.2
+
+# Rogue (0:Assassination, 1:Combat, 2:Subtlety)
+OptimalBotRaid.AI.Rogue.0 = 0.8
+OptimalBotRaid.AI.Rogue.1 = 1.5
+OptimalBotRaid.AI.Rogue.2 = 0.8
+
+# Warrior (0:Arms, 1:Fury, 2:Protection)
+OptimalBotRaid.AI.Warrior.0 = 1.0
+OptimalBotRaid.AI.Warrior.1 = 1.0
+OptimalBotRaid.AI.Warrior.2 = 1.2
