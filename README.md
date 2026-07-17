@@ -38,7 +38,7 @@ This module is built to standard AzerothCore specifications and must be compiled
    ```
 2. Clone this repository (or copy the mod-optimal-bot-raid directory in):
    ```bash
-   git clone [https://github.com/YourOrganization/mod-optimal-bot-raid.git](https://github.com/YourOrganization/mod-optimal-bot-raid.git)
+   git clone https://github.com/barnaclebarry/mod-optimal-bot-raid.git
    ```
 3. Re-run CMake to generate the build files, and compile:
    ```bash
