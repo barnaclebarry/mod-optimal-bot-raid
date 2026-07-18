@@ -7,6 +7,7 @@
  * FEATURE: Non-blocking, in-memory string-buffered telemetry for algorithmic validation.
  * UPDATE: Captures complete bot state transitions during Assembly and Dismissal. Debug deprecated.
  * UPDATE: Added custom level ranges, auto-relaxation down to level 10, and freeroam dismissal support.
+ * HOTFIX: Native ChatCommandTable method overloading to fix AC's unsigned int strict-type parsing.
  */
 
 #include "ScriptMgr.h"
@@ -28,9 +29,9 @@
 #include <algorithm>
 #include <initializer_list>
 #include <fstream>
-#include <sstream>      // For memory-buffered telemetry logging
-#include <iomanip>      // For float precision and hex bitmasks
-#include <cctype>       // For string lowering
+#include <sstream>
+#include <iomanip>
+#include <cctype>
 #include <ctime>
 #include <shared_mutex>
 #include "Log.h"
@@ -168,12 +169,16 @@ public:
     cs_optimal_bot_raid() : CommandScript("cs_optimal_bot_raid") { }
 
     ChatCommandTable GetCommands() const override {
+        // Natively overloads commands in AC so the core attempts string binding before uint32 binding.
         static ChatCommandTable botRaidTable = {
-            { "assemble",  HandleAssemble,  SEC_PLAYER, Console::No },
-            { "dismiss",   HandleDismiss,   SEC_PLAYER, Console::No },
-            { "debug",     HandleDebug,     SEC_PLAYER, Console::No },
-            { "telemetry", HandleTelemetry, SEC_PLAYER, Console::No },
-            { "version",   HandleVersion,   SEC_PLAYER, Console::No }
+            { "assemble",  HandleAssembleRange,   SEC_PLAYER, Console::No },
+            { "assemble",  HandleAssembleSize,    SEC_PLAYER, Console::No },
+            { "dismiss",   HandleDismissFreeroam, SEC_PLAYER, Console::No },
+            { "dismiss",   HandleDismiss,         SEC_PLAYER, Console::No },
+            { "debug",     HandleDebug,           SEC_PLAYER, Console::No },
+            { "telemetry", HandleTelemetryToggle, SEC_PLAYER, Console::No },
+            { "telemetry", HandleTelemetry,       SEC_PLAYER, Console::No },
+            { "version",   HandleVersion,         SEC_PLAYER, Console::No }
         };
         static ChatCommandTable commandTable = { { "botraid", botRaidTable } };
         return commandTable;
@@ -186,15 +191,8 @@ public:
         return true;
     }
 
-    static bool HandleTelemetry(ChatHandler* handler, const char* args)
+    static bool HandleTelemetryToggle(ChatHandler* handler, std::string argStr)
     {
-        if (!args || !*args) {
-            handler->PSendSysMessage("BotRaid Validation Telemetry is currently: {}", s_telemetryEnabled ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
-            handler->SendSysMessage("Syntax: .botraid telemetry <on|off>");
-            return true;
-        }
-
-        std::string argStr = args;
         std::transform(argStr.begin(), argStr.end(), argStr.begin(), ::tolower);
 
         if (argStr == "on") {
@@ -207,6 +205,13 @@ public:
             handler->PSendSysMessage("BotRaid Validation Telemetry is currently: {}", s_telemetryEnabled ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
             handler->SendSysMessage("Syntax: .botraid telemetry <on|off>");
         }
+        return true;
+    }
+
+    static bool HandleTelemetry(ChatHandler* handler)
+    {
+        handler->PSendSysMessage("BotRaid Validation Telemetry is currently: {}", s_telemetryEnabled ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
+        handler->SendSysMessage("Syntax: .botraid telemetry <on|off>");
         return true;
     }
 
@@ -349,53 +354,38 @@ public:
         }
     }
 
-    static bool HandleAssemble(ChatHandler* handler, const char* args)
+    static bool HandleAssembleRange(ChatHandler* handler, std::string rangeStr, uint32 size)
+    {
+        uint32 reqMin = 0;
+        uint32 reqMax = 0;
+        
+        size_t dash = rangeStr.find('-');
+        if (dash != std::string::npos) {
+            try {
+                reqMin = std::stoul(rangeStr.substr(0, dash));
+                reqMax = std::stoul(rangeStr.substr(dash + 1));
+                return ExecuteAssemble(handler, reqMin, reqMax, true, size);
+            } catch (...) {
+                handler->SendSysMessage("Invalid range syntax. Please provide valid numbers (e.g., 60-67).");
+                return true;
+            }
+        }
+        
+        handler->SendSysMessage("Invalid syntax. Example: .botraid assemble 60-67 40");
+        return true;
+    }
+
+    static bool HandleAssembleSize(ChatHandler* handler, uint32 size)
+    {
+        return ExecuteAssemble(handler, 0, 0, false, size);
+    }
+
+    static bool ExecuteAssemble(ChatHandler* handler, uint32 reqMin, uint32 reqMax, bool hasCustomRange, uint32 size)
     {
         Player* player = handler->GetSession()->GetPlayer();
         
         if (!player->IsAlive()) {
             handler->SendSysMessage("You cannot draft mercenaries while dead.");
-            return true;
-        }
-
-        if (!args || !*args) {
-            handler->SendSysMessage("Syntax: .botraid assemble [<min>-<max>] <size>");
-            handler->SendSysMessage("Example: .botraid assemble 60-67 40");
-            return true;
-        }
-
-        std::string argStr(args);
-        std::istringstream iss(argStr);
-        std::vector<std::string> tokens;
-        std::string token;
-        while (iss >> token) tokens.push_back(token);
-
-        if (tokens.empty()) return false;
-
-        uint32 size = 0;
-        uint32 reqMin = 0;
-        uint32 reqMax = 0;
-        bool hasCustomRange = false;
-        
-        try {
-            if (tokens.size() == 1) {
-                size = std::stoul(tokens[0]);
-            } else if (tokens.size() >= 2) {
-                std::string rangeStr = tokens[0];
-                size = std::stoul(tokens[1]);
-                
-                size_t dash = rangeStr.find('-');
-                if (dash != std::string::npos) {
-                    reqMin = std::stoul(rangeStr.substr(0, dash));
-                    reqMax = std::stoul(rangeStr.substr(dash + 1));
-                    hasCustomRange = true;
-                } else {
-                    handler->SendSysMessage("Invalid syntax. Example: .botraid assemble 60-67 40");
-                    return true;
-                }
-            }
-        } catch (...) {
-            handler->SendSysMessage("Invalid syntax. Please provide valid numeric arguments.");
             return true;
         }
 
@@ -721,7 +711,23 @@ public:
         return true;
     }
 
-    static bool HandleDismiss(ChatHandler* handler, const char* args)
+    static bool HandleDismissFreeroam(ChatHandler* handler, std::string argStr)
+    {
+        std::transform(argStr.begin(), argStr.end(), argStr.begin(), ::tolower);
+        if (argStr == "freeroam") {
+            return ExecuteDismiss(handler, true);
+        }
+        
+        handler->SendSysMessage("Syntax: .botraid dismiss [freeroam]");
+        return true;
+    }
+
+    static bool HandleDismiss(ChatHandler* handler)
+    {
+        return ExecuteDismiss(handler, false);
+    }
+
+    static bool ExecuteDismiss(ChatHandler* handler, bool freeroam)
     {
         Player* player = handler->GetSession()->GetPlayer();
         Group* initialGroup = player->GetGroup();
@@ -729,15 +735,6 @@ public:
         if (!initialGroup || initialGroup->GetLeaderGUID() != player->GetGUID()) {
             handler->SendSysMessage("You must be the group leader to dismiss the mercenaries.");
             return true;
-        }
-
-        bool freeroam = false;
-        if (args && *args) {
-            std::string argStr(args);
-            std::transform(argStr.begin(), argStr.end(), argStr.begin(), ::tolower);
-            if (argStr.find("freeroam") != std::string::npos) {
-                freeroam = true;
-            }
         }
 
         std::ostringstream teleLog;
