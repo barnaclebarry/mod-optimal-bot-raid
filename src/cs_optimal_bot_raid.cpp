@@ -169,16 +169,12 @@ public:
     cs_optimal_bot_raid() : CommandScript("cs_optimal_bot_raid") { }
 
     ChatCommandTable GetCommands() const override {
-        // Natively overloads commands in AC so the core attempts string binding before uint32 binding.
         static ChatCommandTable botRaidTable = {
-            { "assemble",  HandleAssembleRange,   SEC_PLAYER, Console::No },
-            { "assemble",  HandleAssembleSize,    SEC_PLAYER, Console::No },
-            { "dismiss",   HandleDismissFreeroam, SEC_PLAYER, Console::No },
-            { "dismiss",   HandleDismiss,         SEC_PLAYER, Console::No },
-            { "debug",     HandleDebug,           SEC_PLAYER, Console::No },
-            { "telemetry", HandleTelemetryToggle, SEC_PLAYER, Console::No },
-            { "telemetry", HandleTelemetry,       SEC_PLAYER, Console::No },
-            { "version",   HandleVersion,         SEC_PLAYER, Console::No }
+            { "assemble",  HandleAssemble,   SEC_PLAYER, Console::No },
+            { "dismiss",   HandleDismiss,    SEC_PLAYER, Console::No },
+            { "debug",     HandleDebug,      SEC_PLAYER, Console::No },
+            { "telemetry", HandleTelemetry,  SEC_PLAYER, Console::No },
+            { "version",   HandleVersion,    SEC_PLAYER, Console::No }
         };
         static ChatCommandTable commandTable = { { "botraid", botRaidTable } };
         return commandTable;
@@ -191,25 +187,23 @@ public:
         return true;
     }
 
-    static bool HandleTelemetryToggle(ChatHandler* handler, std::string argStr)
+    static bool HandleTelemetry(ChatHandler* handler, Optional<std::string> optArg)
     {
-        std::transform(argStr.begin(), argStr.end(), argStr.begin(), ::tolower);
+        if (optArg) {
+            std::string argStr = *optArg;
+            std::transform(argStr.begin(), argStr.end(), argStr.begin(), ::tolower);
 
-        if (argStr == "on") {
-            s_telemetryEnabled = true;
-            handler->SendSysMessage("BotRaid Validation Telemetry: |cff00ff00ON|r. Air-gapped logs will capture algorithmic evaluation and full lifecycle bot states.");
-        } else if (argStr == "off") {
-            s_telemetryEnabled = false;
-            handler->SendSysMessage("BotRaid Validation Telemetry: |cffff0000OFF|r.");
-        } else {
-            handler->PSendSysMessage("BotRaid Validation Telemetry is currently: {}", s_telemetryEnabled ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
-            handler->SendSysMessage("Syntax: .botraid telemetry <on|off>");
+            if (argStr == "on") {
+                s_telemetryEnabled = true;
+                handler->SendSysMessage("BotRaid Validation Telemetry: |cff00ff00ON|r. Air-gapped logs will capture algorithmic evaluation and full lifecycle bot states.");
+                return true;
+            } else if (argStr == "off") {
+                s_telemetryEnabled = false;
+                handler->SendSysMessage("BotRaid Validation Telemetry: |cffff0000OFF|r.");
+                return true;
+            }
         }
-        return true;
-    }
-
-    static bool HandleTelemetry(ChatHandler* handler)
-    {
+        
         handler->PSendSysMessage("BotRaid Validation Telemetry is currently: {}", s_telemetryEnabled ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
         handler->SendSysMessage("Syntax: .botraid telemetry <on|off>");
         return true;
@@ -354,30 +348,38 @@ public:
         }
     }
 
-    static bool HandleAssembleRange(ChatHandler* handler, std::string rangeStr, uint32 size)
+    static bool HandleAssemble(ChatHandler* handler, std::string arg1, Optional<uint32> optSize)
     {
-        uint32 reqMin = 0;
-        uint32 reqMax = 0;
-        
-        size_t dash = rangeStr.find('-');
-        if (dash != std::string::npos) {
-            try {
-                reqMin = std::stoul(rangeStr.substr(0, dash));
-                reqMax = std::stoul(rangeStr.substr(dash + 1));
-                return ExecuteAssemble(handler, reqMin, reqMax, true, size);
-            } catch (...) {
-                handler->SendSysMessage("Invalid range syntax. Please provide valid numbers (e.g., 60-67).");
-                return true;
+        // Case 1: The user passed two arguments (.botraid assemble 60-67 40)
+        if (optSize) {
+            uint32 reqMin = 0;
+            uint32 reqMax = 0;
+            uint32 size = *optSize;
+            
+            size_t dash = arg1.find('-');
+            if (dash != std::string::npos) {
+                try {
+                    reqMin = std::stoul(arg1.substr(0, dash));
+                    reqMax = std::stoul(arg1.substr(dash + 1));
+                    return ExecuteAssemble(handler, reqMin, reqMax, true, size);
+                } catch (...) {
+                    handler->SendSysMessage("Invalid range syntax. Please provide valid numbers (e.g., 60-67).");
+                    return true;
+                }
             }
+            
+            handler->SendSysMessage("Invalid syntax. Example: .botraid assemble 60-67 40");
+            return true;
         }
-        
-        handler->SendSysMessage("Invalid syntax. Example: .botraid assemble 60-67 40");
-        return true;
-    }
 
-    static bool HandleAssembleSize(ChatHandler* handler, uint32 size)
-    {
-        return ExecuteAssemble(handler, 0, 0, false, size);
+        // Case 2: The user passed one argument (.botraid assemble 40)
+        try {
+            uint32 size = std::stoul(arg1);
+            return ExecuteAssemble(handler, 0, 0, false, size);
+        } catch (...) {
+            handler->SendSysMessage("Invalid syntax. Example: .botraid assemble 40 or .botraid assemble 60-67 40");
+            return true;
+        }
     }
 
     static bool ExecuteAssemble(ChatHandler* handler, uint32 reqMin, uint32 reqMax, bool hasCustomRange, uint32 size)
@@ -711,19 +713,19 @@ public:
         return true;
     }
 
-    static bool HandleDismissFreeroam(ChatHandler* handler, std::string argStr)
+    static bool HandleDismiss(ChatHandler* handler, Optional<std::string> optArg)
     {
-        std::transform(argStr.begin(), argStr.end(), argStr.begin(), ::tolower);
-        if (argStr == "freeroam") {
-            return ExecuteDismiss(handler, true);
+        if (optArg) {
+            std::string argStr = *optArg;
+            std::transform(argStr.begin(), argStr.end(), argStr.begin(), ::tolower);
+            if (argStr == "freeroam") {
+                return ExecuteDismiss(handler, true);
+            }
+            
+            handler->SendSysMessage("Syntax: .botraid dismiss [freeroam]");
+            return true;
         }
         
-        handler->SendSysMessage("Syntax: .botraid dismiss [freeroam]");
-        return true;
-    }
-
-    static bool HandleDismiss(ChatHandler* handler)
-    {
         return ExecuteDismiss(handler, false);
     }
 
