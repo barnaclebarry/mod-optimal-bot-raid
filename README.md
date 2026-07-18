@@ -4,7 +4,7 @@
 [![Core: AzerothCore](https://img.shields.io/badge/Core-AzerothCore%203.3.5a-red.svg)](https://github.com/azerothcore/azerothcore-wotlk)
 [![Dependency: Playerbots](https://img.shields.io/badge/Dependency-Playerbots-orange.svg)]()
 
-An advanced, mathematically optimized C++ raid orchestration module for **AzerothCore (3.3.5a)** and **mod-playerbots** (Tested against Playerbot core `cc9a12b`).
+An advanced, mathematically optimized C++ raid orchestration module for **AzerothCore (3.3.5a)** and **mod-playerbots** (Tested against Playerbot core `3fa1c1e4`).
 
 Tired of manually drafting, whispering, and grouping bots to ensure you have the right buffs for a raid? This module introduces a highly performant C++ algorithm that instantly scans your server's entire bot population, solves the **Set Cover** (raid buff synergies) and **Knapsack** (GearScore/AI competency) optimization problems, and teleports the mathematically perfect raid composition directly to you.
 
