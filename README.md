@@ -22,7 +22,7 @@ Compilation will safely bypass and disable the module on a vanilla AzerothCore d
 * **Instant Autonomous Assembly:** Drafts, invites, teleports, and syncs AI state machines for parties and raids of 5, 10, 15, 20, 25, or 40 players in a single command.
 * **WotLK Buff Synergy:** Uses lightning-fast bitwise matrix math to guarantee your raid is drafted with 10% Stats, Replenishment, Bloodlust, 13% Magic Damage, etc., with zero buff redundancy. Special mathematical weights are natively given to heavily sought-after WotLK buffs.
 * **AI Competency Multipliers:** The algorithm heavily favors bot specs that perform flawlessly (e.g., Holy Paladins at `1.5x`, Combat Rogues at `1.5x`) while mathematically penalizing specs that bots struggle with (e.g., Unholy DKs dropping to `0.6x`, Feral Druids to `0.5x`).
-* **Progression Agnostic (Lvl 1 - 80):** Scales dynamically based on the Raid Leader's level. If you form a 40-man raid at Level 60, it adjusts the quotas for Vanilla (e.g., 10 healers instead of 8) and strictly locks the draft to <= Lvl 60 bots to prevent Outland-geared bots from contaminating your Vanilla progression.
+* **Progression Agnostic & Intelligent Bounds:** You can request explicitly tight level boundaries (e.g., `60-67`). If the server doesn't have enough idle bots matching those exact constraints, the C++ algorithm dynamically and smoothly relaxes the limit downward (as far as level 10) to safely salvage the draft and fill out your roster.
 * **Crash-Proof Concurrency & Thread Safety:** Polling a server's entire player array can cause severe memory access violations. This module natively utilizes `HashMapHolder<Player>::GetLock()` with a `std::shared_lock<std::shared_mutex>` to ensure thread-safe asynchronous entity scraping and evaluation.
 * **Player Alt Preservation vs. Random Bots:** Intelligently differentiates between system-generated Random Bots and offline Player Alts. When dismissing an Alt, it carefully strips specific raid strategies without invoking a `PlayerbotFactory::Refresh()`, ensuring real players' gear, UI, and custom specs are never accidentally wiped by the factory.
 
@@ -38,7 +38,7 @@ This module is built to standard AzerothCore specifications and must be compiled
    ```
 2. Clone this repository (or copy the mod-optimal-bot-raid directory in):
    ```bash
-   git clone https://github.com/barnaclebarry/mod-optimal-bot-raid.git
+   git clone [https://github.com/barnaclebarry/mod-optimal-bot-raid.git](https://github.com/barnaclebarry/mod-optimal-bot-raid.git)
    ```
 3. Re-run CMake to generate the build files, and compile:
    ```bash
@@ -57,26 +57,28 @@ Once compiled, any `.conf.dist` files are automatically deployed to your server'
 Once compiled and your server is running, log into any character (Level 1-80) and use the following chat commands. You must be alive to use these commands.
 
 ### 1. Assemble a Group or Raid
-**Syntax:** `.botraid assemble <size>`  
+**Syntax:** `.botraid assemble [<min-max>] <size>`  
 **Supported Sizes:** 5, 10, 15, 20, 25, 40  
-**Example:** `.botraid assemble 10`  
+**Examples:** `.botraid assemble 10` | `.botraid assemble 60-67 40`  
 **What it does:**
 * Evaluates your current group (and any human friends currently with you).
 * Calculates missing roles based on strict Ranged-to-Melee bias quotas to prevent melee cleave deaths.
-* Scans the server safely for idle, out-of-combat bots matching your level bracket (within +/- 4 levels, capped by your current expansion).
+* Scans the server safely for idle, out-of-combat bots matching your level bracket. If a custom bracket is not provided, defaults to +/- 4 levels of the leader.
+* **Intelligent Relaxation:** If there are not enough bots in the desired bracket, it will dynamically and gradually relax the minimum level limit down (as far as level 10) to fulfill the draft, while explicitly notifying you of the adjusted range.
 * Scores them based on their Normalized GearScore and the missing unique buffs they bring to your current comp.
 * Invites them, converts the group to a raid, teleports them to your exact coordinates/instance, and resets their AI to follow you.
 
 ### 2. Dismiss the Mercenaries
-**Syntax:** `.botraid dismiss`  
+**Syntax:** `.botraid dismiss [freeroam]`  
 **What it does:**
 * Safely removes every mod-playerbot from your current group (human players are completely untouched).
 * Severs the AI master link and halts physics/momentum natively via `bot->StopMoving()` and `MotionMaster->Clear()`.
+* If `freeroam` is specified, the script cuts the bots loose right in their current spot without natively teleporting them back to their home Innkeeper bind.
 * **Defeats Asynchronous AI Race Conditions:** Uses a 1000ms `AddTimedEvent()` delayed lambda callback. This intentionally bypasses the notorious `ResetAiAction` race condition inherent to the Playerbot core, ensuring mercenaries accurately decouple from the raid leader without freezing into un-targetable statues.
 * **Executes a Split Strategy Cleanse:**
   * **System RandomBots** are fully factory refreshed and randomized.
   * **Offline Player Alts** receive manual strategy stripping (`-follow`, `-dps assist`, etc.) to protect their customized gear.
-  * Both are forced into `+roam` state and are natively teleported back to their respective Innkeeper homebinds (`m_homebindMapId`).
+  * Both are forced into `+roam` state and are naturally removed.
 
 ### 3. Generate Telemetry (Debug Mode)
 **Syntax:** `.botraid debug`  
@@ -88,8 +90,7 @@ Once compiled and your server is running, log into any character (Level 1-80) an
 ### 4. Check Module Version
 **Syntax:** `.botraid version`  
 **What it does:**
-* Prints the short Git commit hash of the `mod-optimal-bot-raid` repository captured at the exact time the module was compiled.
-* Vital for verifying server deployments, reporting issues, and diagnosing version-specific behavioral bugs.
+* Prints the C++ compilation date and time to verify the binary mapped against your AzerothCore environment.
 
 ---
 
