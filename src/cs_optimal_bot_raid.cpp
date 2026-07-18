@@ -6,6 +6,8 @@
  * REFACTOR: Dynamic Heuristic extracted to cached memory with tight bounds validation.
  * FEATURE: Non-blocking, in-memory string-buffered telemetry for algorithmic validation.
  * UPDATE: Captures complete bot state transitions during Assembly and Dismissal. Debug deprecated.
+ * UPDATE: Added custom level ranges, auto-relaxation down to level 10, and freeroam dismissal support.
+ * HOTFIX: Native ChatCommandTable method overloading to fix AC's unsigned int strict-type parsing.
  */
 
 #include "ScriptMgr.h"
@@ -22,27 +24,17 @@
 #include "Config.h"
 #include "Map.h"
 #include <vector>
+#include <string>
 #include <cmath>
 #include <algorithm>
 #include <initializer_list>
 #include <fstream>
-#include <sstream>      // For memory-buffered telemetry logging
-#include <iomanip>      // For float precision and hex bitmasks
-#include <cctype>       // For string lowering
+#include <sstream>
+#include <iomanip>
+#include <cctype>
 #include <ctime>
 #include <shared_mutex>
 #include "Log.h"
-
-// ==============================================================================
-// BUILD METADATA MACROS
-// ==============================================================================
-#ifndef BOTRAID_COMMIT_HASH
-#define BOTRAID_COMMIT_HASH unknown
-#endif
-
-// Safely stringifies the unquoted macro injected by CMake
-#define OBR_STR_HELPER(x) #x
-#define OBR_STR(x) OBR_STR_HELPER(x)
 
 using namespace Acore::ChatCommands;
 
@@ -164,6 +156,7 @@ enum WotlkBuffs : uint32 {
 
 struct BotCandidate {
     Player* bot;
+    uint32 level;
     BotRole role;
     float gearScore;
     float aiCompetency;
@@ -177,11 +170,11 @@ public:
 
     ChatCommandTable GetCommands() const override {
         static ChatCommandTable botRaidTable = {
-            { "assemble",  HandleAssemble,  SEC_PLAYER, Console::No },
-            { "dismiss",   HandleDismiss,   SEC_PLAYER, Console::No },
-            { "debug",     HandleDebug,     SEC_PLAYER, Console::No },
-            { "telemetry", HandleTelemetry, SEC_PLAYER, Console::No },
-            { "version",   HandleVersion,   SEC_PLAYER, Console::No }
+            { "assemble",  HandleAssemble,   SEC_PLAYER, Console::No },
+            { "dismiss",   HandleDismiss,    SEC_PLAYER, Console::No },
+            { "debug",     HandleDebug,      SEC_PLAYER, Console::No },
+            { "telemetry", HandleTelemetry,  SEC_PLAYER, Console::No },
+            { "version",   HandleVersion,    SEC_PLAYER, Console::No }
         };
         static ChatCommandTable commandTable = { { "botraid", botRaidTable } };
         return commandTable;
@@ -190,36 +183,32 @@ public:
     static bool HandleVersion(ChatHandler* handler)
     {
         handler->SendSysMessage("Optimal Bot Raid Module");
-        handler->SendSysMessage("Build Hash: |cff00ff00" OBR_STR(BOTRAID_COMMIT_HASH) "|r");
         handler->SendSysMessage("Compiled On: |cff00ff00" __DATE__ " at " __TIME__ "|r");
         return true;
     }
 
-    static bool HandleTelemetry(ChatHandler* handler, const char* args)
+    static bool HandleTelemetry(ChatHandler* handler, Optional<std::string> optArg)
     {
-        if (!args || !*args) {
-            handler->PSendSysMessage("BotRaid Validation Telemetry is currently: {}", s_telemetryEnabled ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
-            handler->SendSysMessage("Syntax: .botraid telemetry <on|off>");
-            return true;
-        }
+        if (optArg) {
+            std::string argStr = *optArg;
+            std::transform(argStr.begin(), argStr.end(), argStr.begin(), ::tolower);
 
-        std::string argStr = args;
-        std::transform(argStr.begin(), argStr.end(), argStr.begin(), ::tolower);
-
-        if (argStr == "on") {
-            s_telemetryEnabled = true;
-            handler->SendSysMessage("BotRaid Validation Telemetry: |cff00ff00ON|r. Air-gapped logs will capture algorithmic evaluation and full lifecycle bot states.");
-        } else if (argStr == "off") {
-            s_telemetryEnabled = false;
-            handler->SendSysMessage("BotRaid Validation Telemetry: |cffff0000OFF|r.");
-        } else {
-            handler->PSendSysMessage("BotRaid Validation Telemetry is currently: {}", s_telemetryEnabled ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
-            handler->SendSysMessage("Syntax: .botraid telemetry <on|off>");
+            if (argStr == "on") {
+                s_telemetryEnabled = true;
+                handler->SendSysMessage("BotRaid Validation Telemetry: |cff00ff00ON|r. Air-gapped logs will capture algorithmic evaluation and full lifecycle bot states.");
+                return true;
+            } else if (argStr == "off") {
+                s_telemetryEnabled = false;
+                handler->SendSysMessage("BotRaid Validation Telemetry: |cffff0000OFF|r.");
+                return true;
+            }
         }
+        
+        handler->PSendSysMessage("BotRaid Validation Telemetry is currently: {}", s_telemetryEnabled ? "|cff00ff00ON|r" : "|cffff0000OFF|r");
+        handler->SendSysMessage("Syntax: .botraid telemetry <on|off>");
         return true;
     }
 
-    // DEPRECATED: Points users to the new system without throwing a "command not found" error
     static bool HandleDebug(ChatHandler* handler)
     {
         handler->SendSysMessage("|cffff0000The .botraid debug command is DEPRECATED.|r");
@@ -227,7 +216,6 @@ public:
         return true;
     }
 
-    // Extracted telemetry helper for functional and state validation
     static void AppendBotStateTelemetry(std::ostringstream& teleLog, Player* bot) {
         teleLog << "    State Profile: " << bot->GetName() << " (GUID: " << bot->GetGUID().ToString() << ")\n";
         
@@ -360,7 +348,41 @@ public:
         }
     }
 
-    static bool HandleAssemble(ChatHandler* handler, uint32 size)
+    static bool HandleAssemble(ChatHandler* handler, std::string arg1, Optional<uint32> optSize)
+    {
+        // Case 1: The user passed two arguments (.botraid assemble 60-67 40)
+        if (optSize) {
+            uint32 reqMin = 0;
+            uint32 reqMax = 0;
+            uint32 size = *optSize;
+            
+            size_t dash = arg1.find('-');
+            if (dash != std::string::npos) {
+                try {
+                    reqMin = std::stoul(arg1.substr(0, dash));
+                    reqMax = std::stoul(arg1.substr(dash + 1));
+                    return ExecuteAssemble(handler, reqMin, reqMax, true, size);
+                } catch (...) {
+                    handler->SendSysMessage("Invalid range syntax. Please provide valid numbers (e.g., 60-67).");
+                    return true;
+                }
+            }
+            
+            handler->SendSysMessage("Invalid syntax. Example: .botraid assemble 60-67 40");
+            return true;
+        }
+
+        // Case 2: The user passed one argument (.botraid assemble 40)
+        try {
+            uint32 size = std::stoul(arg1);
+            return ExecuteAssemble(handler, 0, 0, false, size);
+        } catch (...) {
+            handler->SendSysMessage("Invalid syntax. Example: .botraid assemble 40 or .botraid assemble 60-67 40");
+            return true;
+        }
+    }
+
+    static bool ExecuteAssemble(ChatHandler* handler, uint32 reqMin, uint32 reqMax, bool hasCustomRange, uint32 size)
     {
         Player* player = handler->GetSession()->GetPlayer();
         
@@ -375,6 +397,14 @@ public:
         }
 
         uint32 pLevel = player->GetLevel();
+        if (!hasCustomRange) {
+            reqMax = (pLevel <= 60) ? 60 : ((pLevel <= 70) ? 70 : 80);
+            reqMin = (pLevel > 4) ? pLevel - 4 : 1;
+        } else {
+            if (reqMin > reqMax) std::swap(reqMin, reqMax);
+            if (reqMin < 1) reqMin = 1;
+        }
+
         Group* group = player->GetGroup();
         
         if (size == 5 && group && group->isRaidGroup()) {
@@ -391,6 +421,7 @@ public:
                     << "         OPTIMAL BOT RAID - ASSEMBLY TELEMETRY          \n"
                     << "========================================================\n"
                     << "Requested Size: " << size << "-man\n"
+                    << "Target Level Range: " << reqMin << " - " << reqMax << (hasCustomRange ? " (Custom)\n" : " (Auto)\n")
                     << "Leader: " << player->GetName() << " (Lvl " << pLevel << ")\n\n"
                     << "--- CONFIGURATION WEIGHTS ---\n"
                     << "WeightGS: " << cfg->weightGS << " | WeightBuff: " << cfg->weightBuff << "\n"
@@ -467,9 +498,6 @@ public:
             botsToDraft = slotsAvailable; 
         }
 
-        uint32 maxBotLevel = (pLevel <= 60) ? 60 : ((pLevel <= 70) ? 70 : 80);
-        uint32 minBotLevel = (pLevel > 4) ? pLevel - 4 : 1;
-
         std::vector<ObjectGuid> potentialBots;
         {
             std::shared_lock<std::shared_mutex> lock(*HashMapHolder<Player>::GetLock());
@@ -481,29 +509,62 @@ public:
                 if (!PlayerbotsMgr::instance().GetPlayerbotAI(bot) || bot->GetTeamId() != player->GetTeamId()) continue;
                 
                 uint32 bLevel = bot->GetLevel();
-                if (bLevel < minBotLevel || bLevel > maxBotLevel) continue;
+                if (bLevel > reqMax) continue;
                 
                 potentialBots.push_back(bot->GetGUID());
             }
         }
 
-        std::vector<BotCandidate> pool;
+        std::vector<BotCandidate> allCandidates;
         for (ObjectGuid guid : potentialBots) {
             if (Player* bot = ObjectAccessor::FindConnectedPlayer(guid)) {
                 if (bot->GetGroup() || !bot->IsAlive() || bot->IsInCombat()) continue;
 
                 BotCandidate cand;
                 cand.bot = bot;
+                cand.level = bot->GetLevel();
                 cand.gearScore = std::max(1.0f, (float)bot->GetAverageItemLevel()); 
                 
                 MapBotProfile(bot, GetBotSpec(bot, bot->getClass()), cand.role, cand.aiCompetency, cand.providedBuffs);
-                if (cand.role != ROLE_UNKNOWN) pool.push_back(cand);
+                if (cand.role != ROLE_UNKNOWN) allCandidates.push_back(cand);
             }
         }
 
+        std::vector<BotCandidate> pool;
+        uint32 currentMin = reqMin;
+        bool relaxed = false;
+
+        // Intelligent boundary relaxation - sequentially steps down to level 10 to salvage failing drafts
+        while (true) {
+            pool.clear();
+            for (auto const& c : allCandidates) {
+                if (c.level >= currentMin) {
+                    pool.push_back(c);
+                }
+            }
+            if (pool.size() >= (size_t)botsToDraft || currentMin <= 10) {
+                break;
+            }
+            currentMin--;
+            relaxed = true;
+        }
+
         if (pool.size() < (size_t)botsToDraft) {
-            handler->PSendSysMessage("Not enough eligible idle bots found! Found {}. Needed {}.", pool.size(), botsToDraft);
+            if (relaxed && currentMin < reqMin) {
+                handler->PSendSysMessage("Not enough eligible idle bots found! Found {}. Needed {}. (Relaxed minimum level down to {})", pool.size(), botsToDraft, currentMin);
+            } else {
+                handler->PSendSysMessage("Not enough eligible idle bots found! Found {}. Needed {}.", pool.size(), botsToDraft);
+            }
             return true;
+        }
+
+        if (relaxed && currentMin < reqMin) {
+            handler->PSendSysMessage("Not enough bots in range ({} - {}). Relaxed minimum level down to {} to fulfill the draft.", reqMin, reqMax, currentMin);
+            if (isTele) {
+                teleLog << "--- RELAXATION EVENT ---\n"
+                        << "Target min level " << reqMin << " did not yield enough candidates.\n"
+                        << "Relaxed min level down to " << currentMin << " to fulfill draft.\n\n";
+            }
         }
 
         float maxGS = 1.0f;
@@ -516,6 +577,7 @@ public:
                     << "Max GS of valid pool: " << maxGS << "\n";
             for (auto const& c : pool) {
                 teleLog << "[" << c.bot->GetName() << "] Role: " << std::setw(6) << GetRoleName(c.role) 
+                        << " | Lvl: " << std::setw(2) << c.level 
                         << " | Base GS: " << std::setw(4) << c.gearScore 
                         << " | AI_Mult: " << std::fixed << std::setprecision(1) << c.aiCompetency 
                         << " | Buff Mask: 0x" << std::hex << c.providedBuffs << std::dec << "\n";
@@ -651,7 +713,23 @@ public:
         return true;
     }
 
-    static bool HandleDismiss(ChatHandler* handler)
+    static bool HandleDismiss(ChatHandler* handler, Optional<std::string> optArg)
+    {
+        if (optArg) {
+            std::string argStr = *optArg;
+            std::transform(argStr.begin(), argStr.end(), argStr.begin(), ::tolower);
+            if (argStr == "freeroam") {
+                return ExecuteDismiss(handler, true);
+            }
+            
+            handler->SendSysMessage("Syntax: .botraid dismiss [freeroam]");
+            return true;
+        }
+        
+        return ExecuteDismiss(handler, false);
+    }
+
+    static bool ExecuteDismiss(ChatHandler* handler, bool freeroam)
     {
         Player* player = handler->GetSession()->GetPlayer();
         Group* initialGroup = player->GetGroup();
@@ -668,7 +746,8 @@ public:
             teleLog << "========================================================\n"
                     << "         OPTIMAL BOT RAID - DISMISSAL TELEMETRY         \n"
                     << "========================================================\n"
-                    << "Leader: " << player->GetName() << "\n\n"
+                    << "Leader: " << player->GetName() << "\n"
+                    << "Mode: " << (freeroam ? "Free-roam (No Teleport)" : "Standard (Homebind Teleport)") << "\n\n"
                     << "--- PRE-DISMISSAL BOT STATES (IDENTIFIED FOR REMOVAL) ---\n";
         }
 
@@ -693,9 +772,14 @@ public:
                 if (isTele) {
                     bool isRandom = sRandomPlayerbotMgr.IsRandomBot(bot);
                     teleLog << "Processing Dismissal for: " << bot->GetName() << "\n"
-                            << "  Logic Branch: " << (isRandom ? "System RandomBot (Factory Wipe Scheduled)" : "Player Alt (Manual Cleanse Scheduled)") << "\n"
-                            << "  Relocating to Homebind MapId: " << bot->m_homebindMapId 
-                            << " (X: " << bot->m_homebindX << ", Y: " << bot->m_homebindY << ", Z: " << bot->m_homebindZ << ")\n\n";
+                            << "  Logic Branch: " << (isRandom ? "System RandomBot (Factory Wipe Scheduled)" : "Player Alt (Manual Cleanse Scheduled)") << "\n";
+                    
+                    if (freeroam) {
+                        teleLog << "  Relocating to Homebind: [SKIPPED - FREEROAM MODE ACTIVE]\n\n";
+                    } else {
+                        teleLog << "  Relocating to Homebind MapId: " << bot->m_homebindMapId 
+                                << " (X: " << bot->m_homebindX << ", Y: " << bot->m_homebindY << ", Z: " << bot->m_homebindZ << ")\n\n";
+                    }
                 }
 
                 if (Group* currentGroup = bot->GetGroup()) {
@@ -742,7 +826,10 @@ public:
                     mm->Clear();
                 }
 
-                bot->TeleportTo(bot->m_homebindMapId, bot->m_homebindX, bot->m_homebindY, bot->m_homebindZ, 0.0f);
+                // If user didn't flag for freeroam, send bots back to their respective inns
+                if (!freeroam) {
+                    bot->TeleportTo(bot->m_homebindMapId, bot->m_homebindX, bot->m_homebindY, bot->m_homebindZ, 0.0f);
+                }
             }
         }
 
@@ -769,7 +856,12 @@ public:
             }
         }
 
-        handler->SendSysMessage("Dismissed all bot mercenaries. They have returned to their duties.");
+        if (freeroam) {
+            handler->SendSysMessage("Dismissed all bot mercenaries. They have been cut loose in their current location.");
+        } else {
+            handler->SendSysMessage("Dismissed all bot mercenaries. They have returned to their duties.");
+        }
+        
         return true;
     }
 };

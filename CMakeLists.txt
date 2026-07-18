@@ -3,24 +3,6 @@
 # ==============================================================================
 message(STATUS "Loading custom module: mod-optimal-bot-raid")
 
-# 0. Build Metadata Extraction
-# Extract the short Git Commit Hash from the module's repo
-execute_process(
-    COMMAND git rev-parse --short HEAD
-    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    OUTPUT_VARIABLE BOTRAID_COMMIT
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
-
-# Inject the hash into the C++ compiler as a definition
-if(BOTRAID_COMMIT)
-    add_definitions(-DBOTRAID_COMMIT_HASH=${BOTRAID_COMMIT})
-endif()
-
-# Inject the unquoted hash into the compiler. The C++ script will stringify it natively.
-add_definitions(-DBOTRAID_COMMIT_HASH=${BOTRAID_COMMIT_HASH})
-
 # 1. Playerbot Dependency Enforcement
 # Fails gracefully if the required Playerbot AI framework is not present in the tree.
 set(PLAYERBOT_FOUND FALSE)
